@@ -13,6 +13,10 @@ on:
       - "scripts/ime_runtime_probe.py"
       - "scripts/ime_source_pin.json"
       - "scripts/test_ime_download.py"
+      - "scripts/mac_clt_sdk.py"
+      - "scripts/prepare_mac_clt.py"
+      - "scripts/prepare_mac_winsdk.py"
+      - "tools/mac-clt/**"
       - "scripts/patch_markers.json"
       - ".github/workflows/ime-trust.yml"
   pull_request:
@@ -23,6 +27,10 @@ on:
       - "scripts/ime_runtime_probe.py"
       - "scripts/ime_source_pin.json"
       - "scripts/test_ime_download.py"
+      - "scripts/mac_clt_sdk.py"
+      - "scripts/prepare_mac_clt.py"
+      - "scripts/prepare_mac_winsdk.py"
+      - "tools/mac-clt/**"
       - "scripts/patch_markers.json"
       - ".github/workflows/ime-trust.yml"
 
@@ -44,7 +52,7 @@ jobs:
         shell: bash
         run: |
           for script in build.sh scripts/*.sh; do bash -n "$script"; done
-          python -m py_compile scripts/check_ime_patch.py scripts/ime_runtime_probe.py
+          python -m py_compile scripts/check_ime_patch.py scripts/ime_runtime_probe.py scripts/mac_clt_sdk.py scripts/prepare_mac_clt.py scripts/prepare_mac_winsdk.py
           python scripts/ime_runtime_probe.py --help
           python -m unittest discover -s scripts -p test_ime_download.py -v
       - name: SHA-pinned source files and exact patch apply/reverse

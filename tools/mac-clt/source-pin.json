@@ -1,0 +1,7 @@
+{
+  "chromium_version": "150.0.7871.114",
+  "path": "build/config/mac/mac_sdk.gni",
+  "url": "https://chromium.googlesource.com/chromium/src/+/150.0.7871.114/build/config/mac/mac_sdk.gni",
+  "pristine_sha256": "faab8ecd3da90f31bff07d03b847731e4e8d310a10d212720e320edafd946542",
+  "patched_sha256": "74d1d98a49b0a3d9b4e121bed0c6a6114264371967261f68f0a7a7979ec7c061"
+}

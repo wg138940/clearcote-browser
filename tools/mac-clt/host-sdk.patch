@@ -1,0 +1,61 @@
+Clearcote optional build-host adapter: use the actual CLT macOS SDK for host tools
+
+Why: Chromium 150's sdk_info.py requires xcodebuild, and find_sdk.py assumes
+Xcode.app's SDK directory layout. Apple's Command Line Tools has a usable SDK
+and compiler/linker, but no Xcode application/version or platform directory.
+Use scripts/mac_clt_sdk.py copied into the private build tree by
+scripts/prepare_mac_clt.py, only for local non-official Mac -> Windows builds.
+Xcode version stays unavailable (empty/0); the CLT package/provider/version and
+actual SDK version/build are recorded explicitly. No system tools are wrapped
+or modified, and no fake Xcode.app/version plist is created.
+
+This is an opt-in host-build compatibility patch, not a browser privacy patch.
+It remains separate from the mandatory Clearcote patches/series. The complete
+series and its L1 gate must still be applied and retained unchanged.
+
+--- a/build/config/mac/mac_sdk.gni
++++ b/build/config/mac/mac_sdk.gni
+@@ -15,6 +15,10 @@
+        target_os == "android")
+ 
+ declare_args() {
++  # Optional CLT provider for host tools in a non-official Mac -> Windows build.
++  # This does not claim that CLT is a full Xcode installation.
++  clearcote_clt_host_sdk = false
++
+   # The following two variables control the minimum supported version for
+   # macOS:
+   #
+@@ -83,7 +87,14 @@
+   _hermetic_xcode_path = "//build/mac_files/xcode_binaries"
+ }
+ 
+-script_name = "//build/config/apple/sdk_info.py"
++if (clearcote_clt_host_sdk) {
++  assert(host_os == "mac" && target_os == "win" && use_system_xcode &&
++             !is_official_build && !use_remoteexec,
++         "CLT adapter is only for local non-official Mac-host Windows builds")
++  script_name = "//build/config/mac/clearcote_clt_sdk.py"
++} else {
++  script_name = "//build/config/apple/sdk_info.py"
++}
+ sdk_info_args = []
+ if (!use_system_xcode) {
+   sdk_info_args += [
+@@ -148,8 +159,14 @@
+     "--print_sdk_build",
+     mac_sdk_min,
+   ]
+-  find_sdk_lines =
+-      exec_script("//build/mac/find_sdk.py", find_sdk_args, "list lines")
++  if (clearcote_clt_host_sdk) {
++    find_sdk_lines = exec_script(script_name,
++                                [ "--find-sdk-lines", mac_sdk_min ],
++                                "list lines")
++  } else {
++    find_sdk_lines =
++        exec_script("//build/mac/find_sdk.py", find_sdk_args, "list lines")
++  }
+   mac_sdk_version = find_sdk_lines[3]
+   mac_sdk_build_version = find_sdk_lines[2]
+   if (mac_sdk_path == "") {
