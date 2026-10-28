@@ -366,8 +366,46 @@ class Build:
             "executable_version": reported}
         write_json(self.state_path, self.state)
 
+    def ensure_rc(self):
+        # Chromium's DEPS rc_mac hook pins this universal host tool by SHA1.
+        # Keep an additional SHA256 pin and execute a real resource compile.
+        revision = "7993171a0945463597004878af3109ea97575b4f"
+        expected = "c1008768291be2e1a3c7100b1b53f1328f7cae1978b65d0fb781968e7726410c"
+        destination = self.src / "build/toolchain/win/rc/mac/rc"
+        if destination.with_suffix(".sha1").read_text().strip() != revision:
+            raise RuntimeError("Chromium RC hook revision differs from the pinned host tool")
+        url = "https://storage.googleapis.com/chromium-browser-clang/rc/" + revision
+        cached = self.work / "download_cache" / ("rc-mac-" + revision)
+        if not cached.exists():
+            with tempfile.TemporaryFile() as incoming:
+                self.download(url, incoming)
+                with cached.open("wb") as output:
+                    shutil.copyfileobj(incoming, output)
+        if sha(cached) != expected or hashlib.sha1(cached.read_bytes()).hexdigest() != revision:
+            raise RuntimeError("RC executable integrity mismatch; no integrity retry")
+        if destination.exists() and sha(destination) != expected:
+            raise RuntimeError("refusing to replace unknown RC executable")
+        if not destination.exists():
+            shutil.copyfile(cached, destination)
+            destination.chmod(0o755)
+        architecture = subprocess.check_output(["file", "-L", destination], text=True).strip()
+        if "Mach-O 64-bit executable arm64" not in architecture:
+            raise RuntimeError("RC executable has no native Mac ARM64 slice")
+        with tempfile.TemporaryDirectory(prefix="clearcote-rc-") as directory:
+            output = Path(directory) / "probe.res"
+            subprocess.run([destination, "/fo" + str(output), "/utf-8"],
+                           input=b'1 RCDATA { 1, 2, 3, 4 }\n', check=True, timeout=30)
+            # Standard Win32 .res starts with an empty 32-byte resource header.
+            if output.read_bytes()[:8] != bytes.fromhex("0000000020000000"):
+                raise RuntimeError("RC probe did not produce a Win32 resource")
+            probe_sha = sha(output)
+        self.state["rc"] = {"url": url, "source_sha1": revision,
+            "binary_sha256": expected, "file": architecture, "probe_res_sha256": probe_sha}
+        write_json(self.state_path, self.state)
+
     def build(self):
         self.ensure_esbuild()
+        self.ensure_rc()
         self.execute(["ninja", "-C", self.src / "out/MacWinIme", f"-j{self.jobs}", "chrome"], cwd=self.src, env=self.configured_env())
 
     def package(self):

@@ -92,7 +92,7 @@ class BuildBoundaryTests(unittest.TestCase):
                 self.assertIn("clearcote_host_link_threads=10", text)
                 self.assertIn("concurrent_links=1", text)
                 self.assertIn("enable_precompiled_headers=false", text)
-                with patch.object(build, "ensure_esbuild"):
+                with patch.object(build, "ensure_esbuild"), patch.object(build, "ensure_rc"):
                     build.build()
                 self.assertIn("-j10", execute.call_args.args[0])
 
