@@ -91,6 +91,7 @@ class BuildBoundaryTests(unittest.TestCase):
                 text = (build.src / "out/MacWinIme/args.gn").read_text(encoding="utf-8")
                 self.assertIn("clearcote_host_link_threads=10", text)
                 self.assertIn("concurrent_links=1", text)
+                self.assertIn("enable_precompiled_headers=false", text)
                 with patch.object(build, "ensure_esbuild"):
                     build.build()
                 self.assertIn("-j10", execute.call_args.args[0])

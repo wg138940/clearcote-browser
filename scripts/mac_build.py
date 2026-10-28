@@ -321,7 +321,7 @@ class Build:
         write_json(self.state_path, self.state)
         out = self.src / "out/MacWinIme"
         out.mkdir(parents=True, exist_ok=True)
-        extra = f"\nclearcote_clt_host_sdk=true\nuse_system_xcode=true\nclearcote_host_link_threads={self.link_threads}\nconcurrent_links=1\nuse_thin_lto=false\nuse_siso=false\n"
+        extra = f"\nclearcote_clt_host_sdk=true\nuse_system_xcode=true\nclearcote_host_link_threads={self.link_threads}\nconcurrent_links=1\nuse_thin_lto=false\nuse_siso=false\nenable_precompiled_headers=false\n"
         (out / "args.gn").write_bytes((REPO / "config/args.gn").read_bytes() + extra.encode())
         self.execute([self.work / "bin/gn", "gen", out, f"--threads={self.jobs}"], cwd=self.src, env=self.configured_env())
 
@@ -351,9 +351,10 @@ class Build:
         digest = hashlib.sha256(payload).hexdigest()
         if destination.exists() and sha(destination) != digest:
             raise RuntimeError("refusing to replace unknown esbuild executable")
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_bytes(payload)
-        destination.chmod(0o755)
+        if not destination.exists():
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(payload)
+            destination.chmod(0o755)
         architecture = subprocess.check_output(["file", "-L", destination], text=True).strip()
         if "Mach-O 64-bit executable arm64" not in architecture:
             raise RuntimeError("esbuild is not a native Mac ARM64 executable")
