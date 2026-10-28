@@ -292,11 +292,17 @@ class Build:
         sdk_layout = layout(self.sdk, ("x64", "x86"))
         write_json(self.work / "windows-sdk-configure.json", sdk_layout)
         host_patch = REPO / "tools/mac-clt/win-host-arch.patch"
-        host_target = self.src / "build/toolchain/win/win_toolchain_data.gni"
-        if sha(host_target) not in (
+        pinned_host_files = {
+            "win_toolchain_data.gni": (
                 "51f4425cac2d1b334f8e7b72f199b7674f9d1318430073c16843c2aba91007e3",
-                "cd873dcfa037141da1df0f07c00a1cdfd98de351e1f2811803ceaff65bad2a9f"):
-            raise RuntimeError("Windows host-architecture metadata differs from pinned pristine/patched source")
+                "cd873dcfa037141da1df0f07c00a1cdfd98de351e1f2811803ceaff65bad2a9f"),
+            "toolchain.gni": (
+                "43c080d1dee244820c45cfc84b0f4e96982f9a2d19b8524944c2a43b0a573abc",
+                "7db4933c10754495f35e6bafa12403cde94e2010ac5894a9c7528adebf6f5708"),
+        }
+        for filename, hashes in pinned_host_files.items():
+            if sha(self.src / "build/toolchain/win" / filename) not in hashes:
+                raise RuntimeError("Windows host-architecture metadata differs from pinned pristine/patched source")
         check = subprocess.run(["git", "apply", "--reverse", "--check", str(host_patch)],
                                cwd=self.src, capture_output=True, text=True)
         if check.returncode:
