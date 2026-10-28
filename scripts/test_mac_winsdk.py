@@ -15,11 +15,14 @@ class SdkArchitectureTests(unittest.TestCase):
         for sub in ("um", "shared", "winrt", "cppwinrt", "ucrt"):
             (kit / "Include" / sdk.SDK / sub).mkdir(parents=True)
         (vc / "include").mkdir(parents=True)
+        (vc / "atlmfc/include").mkdir(parents=True)
+        (vc / "atlmfc/include/atldef.h").write_bytes(b"fixture")
         (vc / "include/vcruntime.h").write_bytes(b"fixture")
         for name in ("windows.h", "WiNdOwS.h"):
             (kit / "Include" / sdk.SDK / "um" / name).write_bytes(b"fixture")
         for arch in arches:
             for directory, name in ((vc / "lib" / arch, "libcmt.lib"),
+                    (vc / "atlmfc/lib" / arch, "atls.lib"),
                     (kit / "Lib" / sdk.SDK / "um" / arch, "kernel32.lib"),
                     (kit / "Lib" / sdk.SDK / "ucrt" / arch, "ucrt.lib")):
                 directory.mkdir(parents=True)

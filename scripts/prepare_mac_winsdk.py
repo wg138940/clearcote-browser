@@ -32,15 +32,17 @@ def layout(root: Path, architectures=("x64",)) -> dict:
     sdk = ["Windows Kits", "10"]
     include = [sdk + ["Include", SDK, sub] for sub in ("um", "shared", "winrt", "cppwinrt", "ucrt")]
     include.append(vc + ["include"])
+    include.append(vc + ["atlmfc", "include"])
     if not architectures or any(arch not in ("x64", "x86", "arm64") for arch in architectures):
         raise ValueError("architectures must explicitly name x64, x86 or arm64")
     outputs = {}
     for arch in architectures:
-        libs = [vc + ["lib", arch], sdk + ["Lib", SDK, "um", arch], sdk + ["Lib", SDK, "ucrt", arch]]
+        libs = [vc + ["lib", arch], vc + ["atlmfc", "lib", arch], sdk + ["Lib", SDK, "um", arch], sdk + ["Lib", SDK, "ucrt", arch]]
         for pieces in include + libs:
             if not root.joinpath(*pieces).is_dir():
                 raise RuntimeError("payload directory missing: " + "/".join(pieces))
         for pieces in (vc + ["include", "vcruntime.h"], vc + ["lib", arch, "libcmt.lib"],
+                       vc + ["atlmfc", "include", "atldef.h"], vc + ["atlmfc", "lib", arch, "atls.lib"],
                        sdk + ["Include", SDK, "um", "windows.h"],
                        sdk + ["Lib", SDK, "um", arch, "kernel32.lib"],
                        sdk + ["Lib", SDK, "ucrt", arch, "ucrt.lib"]):
