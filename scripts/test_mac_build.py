@@ -91,7 +91,8 @@ class BuildBoundaryTests(unittest.TestCase):
                 text = (build.src / "out/MacWinIme/args.gn").read_text(encoding="utf-8")
                 self.assertIn("clearcote_host_link_threads=10", text)
                 self.assertIn("concurrent_links=1", text)
-                build.build()
+                with patch.object(build, "ensure_esbuild"):
+                    build.build()
                 self.assertIn("-j10", execute.call_args.args[0])
 
     def test_zero_concurrency_is_rejected_instead_of_silently_defaulting(self):

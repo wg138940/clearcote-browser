@@ -5,7 +5,7 @@ Used by tools/mac-clt/host-sdk.patch only with an explicit, non-official Windows
 cross-build opt-in. Missing Xcode version is reported as empty/0, never inferred
 from the CLT package version. The real CLT version is recorded separately.
 
-Light probe: taskpolicy -b nice -n 19 python3 mac_clt_sdk.py --probe \
+Light probe: taskpolicy -c utility nice -n 19 python3 mac_clt_sdk.py --probe \
   --work-dir ~/clearcote-ime-spike/clt-probe --json <report.json>
 This compiles two tiny host programs and a header-free Windows COFF object;
 it does not prove that the complete Chromium build graph works with CLT.
@@ -102,7 +102,7 @@ def main() -> int:
         numbers = lambda value: tuple(int(part) for part in value.split("."))
         if numbers(info["sdk_version"]) < numbers(args.value):
             raise RuntimeError("CLT SDK is below Chromium's minimum")
-        print("\n".join([info["sdk_path"], info["bin_path"], info["sdk_build"], info["sdk_version"]]))
+        print("\n".join([info["sdk_path"], info["bin_path"] + "/", info["sdk_build"], info["sdk_version"]]))
     else:
         if args.value != "macosx":
             raise RuntimeError("CLT adapter cannot build other Apple platforms")

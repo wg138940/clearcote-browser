@@ -321,7 +321,48 @@ class Build:
         (out / "args.gn").write_bytes((REPO / "config/args.gn").read_bytes() + extra.encode())
         self.execute([self.work / "bin/gn", "gen", out, f"--threads={self.jobs}"], cwd=self.src, env=self.configured_env())
 
+    def ensure_esbuild(self):
+        # The lite archive/prune step omits this pinned CIPD host executable.
+        version = "version:3@0.25.1.chromium.2"
+        package = "infra/3pp/tools/esbuild/mac-arm64"
+        expected = "f9801c81788b15756909420d7d03d97e55c15c56eb0829f2ecc938a5e8eb4233"
+        deps = (self.src / "third_party/devtools-frontend/src/DEPS").read_text()
+        if version not in deps or "infra/3pp/tools/esbuild/${{platform}}" not in deps:
+            raise RuntimeError("DevTools esbuild DEPS differs from the pinned package")
+        url = "https://chrome-infra-packages.appspot.com/dl/" + package + "/+/" + version
+        archive = self.work / "download_cache/esbuild-mac-arm64-0.25.1.chromium.2.zip"
+        if not archive.exists():
+            with tempfile.TemporaryFile() as incoming:
+                self.download(url, incoming)
+                with archive.open("wb") as output:
+                    shutil.copyfileobj(incoming, output)
+        if sha(archive) != expected:
+            raise RuntimeError("esbuild CIPD archive SHA256 mismatch; no integrity retry")
+        with zipfile.ZipFile(archive) as package_zip:
+            manifest = json.loads(package_zip.read(".cipdpkg/manifest.json"))
+            if manifest["package_name"] != package:
+                raise RuntimeError("esbuild CIPD package identity mismatch")
+            payload = package_zip.read("esbuild")
+        destination = self.src / "third_party/devtools-frontend/src/third_party/esbuild/esbuild"
+        digest = hashlib.sha256(payload).hexdigest()
+        if destination.exists() and sha(destination) != digest:
+            raise RuntimeError("refusing to replace unknown esbuild executable")
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(payload)
+        destination.chmod(0o755)
+        architecture = subprocess.check_output(["file", "-L", destination], text=True).strip()
+        if "Mach-O 64-bit executable arm64" not in architecture:
+            raise RuntimeError("esbuild is not a native Mac ARM64 executable")
+        reported = subprocess.check_output([destination, "--version"], text=True).strip()
+        if reported != "0.25.1":
+            raise RuntimeError("esbuild executable version mismatch")
+        self.state["esbuild"] = {"package": package, "version": version, "url": url,
+            "archive_sha256": expected, "binary_sha256": digest, "file": architecture,
+            "executable_version": reported}
+        write_json(self.state_path, self.state)
+
     def build(self):
+        self.ensure_esbuild()
         self.execute(["ninja", "-C", self.src / "out/MacWinIme", f"-j{self.jobs}", "chrome"], cwd=self.src, env=self.configured_env())
 
     def package(self):
