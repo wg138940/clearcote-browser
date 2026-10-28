@@ -26,6 +26,7 @@ from pathlib import Path
 import platform
 import re
 import shlex
+import shutil
 import socket
 import subprocess
 import sys
@@ -259,20 +260,27 @@ class Build:
 
     def bootstrap(self):
         llvm = self.src / "third_party/llvm-build/Release+Asserts/bin"
-        wrapper = self.work / "bin/ninja-background"
-        wrapper.parent.mkdir(parents=True, exist_ok=True)
-        wrapper.write_bytes(f'#!/bin/sh\nexec /opt/homebrew/bin/ninja "$@" -j{self.jobs}\n'.encode())
-        wrapper.chmod(0o755)
+        destination = self.work / "bin/gn"
+        destination.parent.mkdir(parents=True, exist_ok=True)
         sdk = metadata()["sdk_path"]
         environment = {**self.env, "PATH": str(llvm) + ":" + self.env["PATH"],
                        "CC": str(llvm / "clang"), "CXX": str(llvm / "clang++"),
-                       "AR": str(llvm / "llvm-ar"), "NINJA": str(wrapper),
+                       "AR": str(llvm / "llvm-ar"),
                        "CFLAGS": "-isysroot " + shlex.quote(sdk),
-                       "CXXFLAGS": "-isysroot " + shlex.quote(sdk),
+                       "CXXFLAGS": "-isysroot " + shlex.quote(sdk) +
+                           " -D_LIBCPP_HARDENING_MODE_DEFAULT=_LIBCPP_HARDENING_MODE_FAST" +
+                           " -D_LIBCPP_HAS_NO_VENDOR_AVAILABILITY_ANNOTATIONS",
                        "LDFLAGS": f"-fuse-ld=lld -Wl,--threads={self.link_threads} -isysroot " + shlex.quote(sdk)}
-        self.execute([sys.executable, self.src / "tools/gn/bootstrap/bootstrap.py",
-                      "--skip-generate-buildfiles", "--jobs", self.jobs, "--output", self.work / "bin/gn"], cwd=self.src, env=environment)
-        self.execute([self.work / "bin/gn", "--version"])
+        # The mandatory Windows overlay rewrites bootstrap.py's target/copy path
+        # to gn.exe. Retain that source patch, but use its same pinned gen.py and
+        # header with the native Mac target "gn"; no Windows executable is run.
+        build_dir = self.src / "out/Release/gn_build"
+        self.execute([sys.executable, self.src / "tools/gn/build/gen.py",
+                      "--no-last-commit-position", "--out-path=" + str(build_dir)], cwd=self.src, env=environment)
+        shutil.copy2(self.src / "tools/gn/bootstrap/last_commit_position.h", build_dir)
+        self.execute(["ninja", "-C", build_dir, f"-j{self.jobs}", "gn"], cwd=self.src, env=environment)
+        shutil.copy2(build_dir / "gn", destination)
+        self.execute([destination, "--version"])
 
     def configured_env(self):
         return {**self.env, "DEPOT_TOOLS_WIN_TOOLCHAIN": "1", "GYP_MSVS_OVERRIDE_PATH": str(self.sdk),
