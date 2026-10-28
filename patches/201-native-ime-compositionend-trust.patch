@@ -28,7 +28,7 @@ runtime probe, including the script-dispatch negative control.
  
 --- a/third_party/blink/renderer/core/editing/ime/input_method_controller_test.cc
 +++ b/third_party/blink/renderer/core/editing/ime/input_method_controller_test.cc
-@@ -186,6 +186,36 @@
+@@ -186,6 +186,38 @@
    EXPECT_EQ("fooX", input->Value());
  }
  
@@ -39,7 +39,9 @@ runtime probe, including the script-dispatch negative control.
 +    for (int mode = 0; mode < 3; ++mode) {
 +      SCOPED_TRACE(html);
 +      SCOPED_TRACE(mode);
-+      Element* editable = InsertHTMLElement(html, "sample");
++      // Replace the fixture so repeated ids cannot select an earlier control.
++      SetBodyContent(html);
++      Element* editable = GetElementById("sample");
 +      Element* script = GetDocument().CreateRawElement(html_names::kScriptTag);
 +      script->SetInnerHTMLWithoutTrustedTypes(
 +          "document.getElementById('sample').addEventListener('compositionend',"
