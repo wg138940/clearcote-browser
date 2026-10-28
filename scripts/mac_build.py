@@ -293,15 +293,18 @@ class Build:
         write_json(self.work / "windows-sdk-configure.json", sdk_layout)
         host_patch = REPO / "tools/mac-clt/win-host-arch.patch"
         pinned_host_files = {
-            "win_toolchain_data.gni": (
+            "build/toolchain/win/win_toolchain_data.gni": (
                 "51f4425cac2d1b334f8e7b72f199b7674f9d1318430073c16843c2aba91007e3",
                 "cd873dcfa037141da1df0f07c00a1cdfd98de351e1f2811803ceaff65bad2a9f"),
-            "toolchain.gni": (
+            "build/toolchain/win/toolchain.gni": (
                 "43c080d1dee244820c45cfc84b0f4e96982f9a2d19b8524944c2a43b0a573abc",
-                "7db4933c10754495f35e6bafa12403cde94e2010ac5894a9c7528adebf6f5708"),
+                "93509e90a38148ce4ddbded11ceb3282f9e6086236e454e794823316d8f60a2d"),
+            "build/rust/rust_bindgen_generator.gni": (
+                "e9cf2bbb560d31be8d923732fc98f4d63aecd08f344f45524c89dc3159ea5823",
+                "d5945de44fbeaf037a258aee8b1733af1198c6dd4eb42ab82d1afe5a0fa2a687"),
         }
         for filename, hashes in pinned_host_files.items():
-            if sha(self.src / "build/toolchain/win" / filename) not in hashes:
+            if sha(self.src / filename) not in hashes:
                 raise RuntimeError("Windows host-architecture metadata differs from pinned pristine/patched source")
         check = subprocess.run(["git", "apply", "--reverse", "--check", str(host_patch)],
                                cwd=self.src, capture_output=True, text=True)

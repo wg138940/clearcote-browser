@@ -8,9 +8,13 @@ Windows-only Rust/system-allocator host variants are likewise created only on
 Windows hosts; Mac host tools continue through the native Mac toolchain.
 The unconditional, real x86/x64 metadata and nocompile checks remain enabled.
 
+Rust bindgen selects Windows metadata for current_cpu (the target of its headers),
+not host_cpu (the Mac executing libclang). No nocompile check is disabled.
+
 --- a/build/toolchain/win/win_toolchain_data.gni
 +++ b/build/toolchain/win/win_toolchain_data.gni
-@@ -28,6 +28,7 @@
+@@ -28,7 +28,8 @@
+                     "environment.x64",
                    ],
                    "scope")
 -  if (target_cpu == "arm64" || host_cpu == "arm64") {
@@ -19,10 +23,17 @@ The unconditional, real x86/x64 metadata and nocompile checks remain enabled.
      win_toolchain_data_arm64 =
          exec_script("//build/toolchain/win/setup_toolchain.py",
                      [
-
 --- a/build/toolchain/win/toolchain.gni
 +++ b/build/toolchain/win/toolchain.gni
-@@ -791,16 +791,18 @@
+@@ -778,7 +778,6 @@
+ 
+   assert(defined(invoker.toolchain_arch))
+   toolchain_arch = invoker.toolchain_arch
+-  rust_host_toolchain_arch = host_cpu
+ 
+   # The toolchain data for `msvc_toolchain()`.
+   if (toolchain_arch == "x86") {
+@@ -791,16 +790,19 @@
      error("Unsupported toolchain_arch, add it to win_toolchain_data.gni")
    }
  
@@ -37,6 +48,7 @@ The unconditional, real x86/x64 metadata and nocompile checks remain enabled.
 -    error(
 -        "Unsupported rust_host_toolchain_arch, add it to win_toolchain_data.gni")
 +  if (host_os == "win") {
++    rust_host_toolchain_arch = host_cpu
 +    # The toolchain data for `build_tools_toolchain` for the host machine.
 +    if (rust_host_toolchain_arch == "x86") {
 +      rust_host_win_toolchain_data = win_toolchain_data_x86
@@ -150,3 +162,24 @@ The unconditional, real x86/x64 metadata and nocompile checks remain enabled.
 +
 +
  }
+--- a/build/rust/rust_bindgen_generator.gni
++++ b/build/rust/rust_bindgen_generator.gni
+@@ -246,14 +246,14 @@
+       # depot_tools. This is negotiated by python scripts and the result is
+       # available in //build/toolchain/win/win_toolchain_data.gni. From there
+       # we get the `include_flags_imsvc` which point to the system headers.
+-      if (host_cpu == "x86") {
++      if (current_cpu == "x86") {
+         win_toolchain_data = win_toolchain_data_x86
+-      } else if (host_cpu == "x64") {
++      } else if (current_cpu == "x64") {
+         win_toolchain_data = win_toolchain_data_x64
+-      } else if (host_cpu == "arm64") {
++      } else if (current_cpu == "arm64") {
+         win_toolchain_data = win_toolchain_data_arm64
+       } else {
+-        error("Unsupported host_cpu, add it to win_toolchain_data.gni")
++        error("Unsupported current_cpu, add it to win_toolchain_data.gni")
+       }
+       args += win_toolchain_data.include_flags_imsvc_list
+     }
