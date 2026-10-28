@@ -77,7 +77,15 @@ class BuildBoundaryTests(unittest.TestCase):
             args = argparse.Namespace(work=root / "work", toolchain=root / "sdk", vcredist=root / "redist",
                                       stage="all", run=False, jobs=10, link_threads=10)
             build = mac_build.Build(args)
-            with patch.object(build, "gate"), patch.object(build, "execute") as execute:
+            metadata = build.src / "build/toolchain/win/win_toolchain_data.gni"
+            metadata.parent.mkdir(parents=True)
+            metadata.write_bytes(b"fixture")
+            real_sha = mac_build.sha
+            with patch.object(mac_build, "sha", side_effect=lambda path: "51f4425cac2d1b334f8e7b72f199b7674f9d1318430073c16843c2aba91007e3" if path == metadata else real_sha(path)), \
+                 patch.object(build, "gate"), patch.object(build, "execute") as execute, \
+                 patch.object(mac_build, "layout", return_value={}), \
+                 patch.object(mac_build.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)):
+
                 build.configure()
                 self.assertIn("--threads=10", execute.call_args.args[0])
                 text = (build.src / "out/MacWinIme/args.gn").read_text(encoding="utf-8")

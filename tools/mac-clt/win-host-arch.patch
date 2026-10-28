@@ -1,0 +1,19 @@
+Clearcote optional Mac-host adapter: distinguish Windows ARM hosts from Mac ARM hosts
+
+Why: Chromium150's Windows metadata import requests ARM64 Windows libraries whenever
+host_cpu is arm64, including a Mac ARM64 host targeting Windows x64. Those libraries
+are not the Mac host sysroot and are not used by the x64 target. Only a Windows ARM
+host (or a genuine Windows ARM64 target) requires this additional Windows payload.
+The unconditional, real x86/x64 metadata and nocompile checks remain enabled.
+
+--- a/build/toolchain/win/win_toolchain_data.gni
++++ b/build/toolchain/win/win_toolchain_data.gni
+@@ -28,6 +28,7 @@
+                   ],
+                   "scope")
+-  if (target_cpu == "arm64" || host_cpu == "arm64") {
++  if (target_cpu == "arm64" ||
++      (host_os == "win" && host_cpu == "arm64")) {
+     win_toolchain_data_arm64 =
+         exec_script("//build/toolchain/win/setup_toolchain.py",
+                     [

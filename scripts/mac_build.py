@@ -77,6 +77,7 @@ class Build:
         inputs = [REPO / "tools/mac-clt/build-pins.json", REPO / "config/args.gn",
                   REPO / "tools/mac-clt/host-sdk.patch", REPO / "tools/mac-clt/link-threads.patch",
                   REPO / "scripts/mac_clt_sdk.py", REPO / "scripts/mac_build.py",
+                  REPO / "tools/mac-clt/win-host-arch.patch", REPO / "scripts/prepare_mac_winsdk.py",
                   REPO / "patches/series"]
         inputs += [REPO / "patches" / line.split("#")[0].strip()
                    for line in (REPO / "patches/series").read_text().splitlines()
@@ -288,6 +289,23 @@ class Build:
 
     def configure(self):
         self.gate()
+        sdk_layout = layout(self.sdk, ("x64", "x86"))
+        write_json(self.work / "windows-sdk-configure.json", sdk_layout)
+        host_patch = REPO / "tools/mac-clt/win-host-arch.patch"
+        host_target = self.src / "build/toolchain/win/win_toolchain_data.gni"
+        if sha(host_target) not in (
+                "51f4425cac2d1b334f8e7b72f199b7674f9d1318430073c16843c2aba91007e3",
+                "cd873dcfa037141da1df0f07c00a1cdfd98de351e1f2811803ceaff65bad2a9f"):
+            raise RuntimeError("Windows host-architecture metadata differs from pinned pristine/patched source")
+        check = subprocess.run(["git", "apply", "--reverse", "--check", str(host_patch)],
+                               cwd=self.src, capture_output=True, text=True)
+        if check.returncode:
+            self.execute(["git", "apply", "--check", host_patch], cwd=self.src)
+            self.execute(["git", "apply", host_patch], cwd=self.src)
+        self.execute(["git", "apply", "--reverse", "--check", host_patch], cwd=self.src)
+        self.state["windows_host_arch_patch"] = {"sha256": sha(host_patch),
+            "reason": "Mac ARM host does not require unused Windows ARM payload; real x86/x64 remain"}
+        write_json(self.state_path, self.state)
         out = self.src / "out/MacWinIme"
         out.mkdir(parents=True, exist_ok=True)
         extra = f"\nclearcote_clt_host_sdk=true\nuse_system_xcode=true\nclearcote_host_link_threads={self.link_threads}\nconcurrent_links=1\nuse_thin_lto=false\nuse_siso=false\n"
@@ -329,7 +347,7 @@ class Build:
         provenance = {"status": "candidate built; Windows IME runtime acceptance NOT run",
                       "clearcote_commit": subprocess.check_output(["git", "-C", REPO, "rev-parse", "HEAD"], text=True).strip(),
                       "pins": self.pins, "mandatory_patches": {name: sha(REPO / "patches" / name) for name in series if name},
-                      "host_patches": {name: sha(REPO / "tools/mac-clt" / name) for name in ("host-sdk.patch", "link-threads.patch")},
+                      "host_patches": {name: sha(REPO / "tools/mac-clt" / name) for name in ("host-sdk.patch", "link-threads.patch", "win-host-arch.patch")},
                       "args_gn_sha256": sha(out / "args.gn"), "archive_sha256": archive_hash,
                       "binary_sha256": {name: sha(out / name) for name in ("chrome.exe", "chrome.dll")},
                       "runtime_dll_sha256": {name: sha(self.redist / name) for name in runtime},
