@@ -16,6 +16,9 @@ on:
       - "scripts/mac_clt_sdk.py"
       - "scripts/prepare_mac_clt.py"
       - "scripts/prepare_mac_winsdk.py"
+      - "scripts/mac_build.py"
+      - "scripts/guard_mac_build.py"
+      - "scripts/test_mac_build.py"
       - "tools/mac-clt/**"
       - "scripts/patch_markers.json"
       - ".github/workflows/ime-trust.yml"
@@ -30,6 +33,9 @@ on:
       - "scripts/mac_clt_sdk.py"
       - "scripts/prepare_mac_clt.py"
       - "scripts/prepare_mac_winsdk.py"
+      - "scripts/mac_build.py"
+      - "scripts/guard_mac_build.py"
+      - "scripts/test_mac_build.py"
       - "tools/mac-clt/**"
       - "scripts/patch_markers.json"
       - ".github/workflows/ime-trust.yml"
@@ -52,9 +58,10 @@ jobs:
         shell: bash
         run: |
           for script in build.sh scripts/*.sh; do bash -n "$script"; done
-          python -m py_compile scripts/check_ime_patch.py scripts/ime_runtime_probe.py scripts/mac_clt_sdk.py scripts/prepare_mac_clt.py scripts/prepare_mac_winsdk.py
+          python -m py_compile scripts/check_ime_patch.py scripts/ime_runtime_probe.py scripts/mac_clt_sdk.py scripts/prepare_mac_clt.py scripts/prepare_mac_winsdk.py scripts/mac_build.py scripts/guard_mac_build.py
           python scripts/ime_runtime_probe.py --help
           python -m unittest discover -s scripts -p test_ime_download.py -v
+          python -m unittest discover -s scripts -p test_mac_build.py -v
       - name: SHA-pinned source files and exact patch apply/reverse
         run: python scripts/check_ime_patch.py --json "${{ runner.temp }}/ime-source-check.json"
       - uses: actions/upload-artifact@v4

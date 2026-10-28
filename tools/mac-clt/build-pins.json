@@ -1,0 +1,30 @@
+{
+  "chromium_version": "150.0.7871.114",
+  "archive": {
+    "name": "chromium-150.0.7871.114-lite.tar.xz",
+    "size": 1670314688,
+    "sha256": "2f1ef6e396ee3c5f7b3876f902541e3344760a17f820691867f4bc3025dea17b"
+  },
+  "ungoogled": {
+    "url": "https://github.com/ungoogled-software/ungoogled-chromium.git",
+    "tag": "150.0.7871.114-1",
+    "commit": "2d89b04e1b68385c9086efab0df1e3679b35246e"
+  },
+  "windows_overlay": {
+    "url": "https://github.com/ungoogled-software/ungoogled-chromium-windows.git",
+    "tag": "150.0.7871.114-1.1",
+    "commit": "42f46dba031f8f9e39277465fa28fec837f2f5bd"
+  },
+  "windows_deps": [
+    {
+      "url": "https://chromium.googlesource.com/external/github.com/microsoft/webauthn.git",
+      "commit": "273689d1d54232f0c316b31f596e7928acb1cd5a",
+      "path": "third_party/microsoft_webauthn/src"
+    },
+    {
+      "url": "https://chromium.googlesource.com/external/github.com/microsoft/DirectX-Headers.git",
+      "commit": "62c23d5ec700659453c6fe89d296554b2a5e7edc",
+      "path": "third_party/microsoft_dxheaders/src"
+    }
+  ]
+}
