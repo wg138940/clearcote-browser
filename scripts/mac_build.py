@@ -293,6 +293,7 @@ class Build:
 
     def configure(self):
         self.gate()
+        self.ensure_uia_sdk()
         sdk_layout = layout(self.sdk, ("x64", "x86"))
         write_json(self.work / "windows-sdk-configure.json", sdk_layout)
         host_patch = REPO / "tools/mac-clt/win-host-arch.patch"
@@ -324,6 +325,56 @@ class Build:
         extra = f"\nclearcote_clt_host_sdk=true\nuse_system_xcode=true\nclearcote_host_link_threads={self.link_threads}\nconcurrent_links=1\nuse_thin_lto=false\nuse_siso=false\nenable_precompiled_headers=false\n"
         (out / "args.gn").write_bytes((REPO / "config/args.gn").read_bytes() + extra.encode())
         self.execute([self.work / "bin/gn", "gen", out, f"--threads={self.jobs}"], cwd=self.src, env=self.configured_env())
+
+    def ensure_uia_sdk(self):
+        # A 26100.0 directory does not identify its servicing revision. Chromium
+        # 150 uses interfaces introduced in the official 26100.7705 headers.
+        # Supplement only these two files, retaining the real installed SDK/libs.
+        package = "microsoft.windows.sdk.cpp.10.0.26100.7705.nupkg"
+        url = "https://api.nuget.org/v3-flatcontainer/microsoft.windows.sdk.cpp/10.0.26100.7705/" + package
+        expected = "ff455660bee071a744715a9665666fa29c07681579d3d815959a9eec5a556424"
+        expected512 = "0349cfbf6964b18c3b5e81168f90021da02c37486cd3f96d0d15a41a1d61155ec5e6393cc0dd866d029fb942e0a1ea05697e884f5d8188cc3cabd926099ac467"
+        pins = {
+            "UIAutomationCore.h": ("4c66c1e32dddc3024dc19cf4d8082bd1165be93589bb976c98abc860cfb1b7a2", "4446d97a8da79008b0689f32beaaf32d9113405c89e05c33587eaf4eeadd978f"),
+            "UIAutomationCore.idl": ("a4e4ee8541b2078ab05e65fc145185c935d46c778f67a2b611223aca529c6dee", "57833474568fcdc6ea385834d95b7f7d6229c6949c20902d714a5ea16b5297eb"),
+        }
+        directory = self.sdk / "Windows Kits/10/Include/10.0.26100.0/um"
+        for name, hashes in pins.items():
+            if sha(directory / name) not in hashes:
+                raise RuntimeError("refusing to replace unknown SDK UI Automation file: " + name)
+        archive = self.work / "download_cache" / package
+        if not archive.exists():
+            with tempfile.TemporaryFile() as incoming:
+                self.download(url, incoming)
+                with archive.open("wb") as output:
+                    shutil.copyfileobj(incoming, output)
+        with archive.open("rb") as stream:
+            digest512 = hashlib.file_digest(stream, "sha512").hexdigest()
+        if sha(archive) != expected or digest512 != expected512:
+            raise RuntimeError("official SDK package integrity mismatch; no integrity retry")
+        backup = self.work / "sdk-addenda/ui-automation"
+        backup.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(archive) as source:
+            payloads = {name: source.read("c/Include/10.0.26100.0/um/" + name) for name in pins}
+        for name, payload in payloads.items():
+            if hashlib.sha256(payload).hexdigest() != pins[name][1]:
+                raise RuntimeError("official SDK header hash mismatch: " + name)
+        for name, payload in payloads.items():
+            destination = directory / name
+            if sha(destination) == pins[name][0]:
+                saved = backup / (pins[name][0] + "-" + name)
+                if saved.exists() and saved.read_bytes() != destination.read_bytes():
+                    raise RuntimeError("SDK addendum backup differs from known original")
+                saved.write_bytes(destination.read_bytes())
+                destination.write_bytes(payload)
+        record = {"source": url, "servicing_version": "10.0.26100.7705",
+            "archive_sha256": expected, "archive_sha512": digest512,
+            "sha512_source": "https://www.nuget.org/api/v2/Packages(Id='Microsoft.Windows.SDK.CPP',Version='10.0.26100.7705')",
+            "files": {name: {"original_sha256": hashes[0], "sdk7705_sha256": hashes[1]} for name, hashes in pins.items()},
+            "scope": "two official UI Automation header/IDL files only; original SDK/libs and existing feature code retained"}
+        self.state.setdefault("sdk_addenda", {})["ui_automation"] = record
+        write_json(backup / "provenance.json", record)
+        write_json(self.state_path, self.state)
 
     def ensure_esbuild(self):
         # The lite archive/prune step omits this pinned CIPD host executable.
@@ -445,6 +496,8 @@ class Build:
                       "binary_sha256": {name: sha(out / name) for name in ("chrome.exe", "chrome.dll")},
                       "runtime_dll_sha256": {name: sha(self.redist / name) for name in runtime},
                       "sdk": metadata(), "downloads": self.state["downloads"],
+                      "sdk_addenda": self.state.get("sdk_addenda", {}),
+                      "dynamic_host_tools": {name: self.state.get(name) for name in ("esbuild", "rc")},
                       "scheduling": self.state.get("process_limits"),
                       "resource_guard": {"memory_pressure_provider": "kern.memorystatus_vm_pressure_level",
                                          "qos": "utility", "fixed_rss_limit": None,

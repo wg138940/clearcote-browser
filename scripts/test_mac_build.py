@@ -82,7 +82,7 @@ class BuildBoundaryTests(unittest.TestCase):
             metadata.write_bytes(b"fixture")
             real_sha = mac_build.sha
             with patch.object(mac_build, "sha", side_effect=lambda path: "51f4425cac2d1b334f8e7b72f199b7674f9d1318430073c16843c2aba91007e3" if path == metadata else "43c080d1dee244820c45cfc84b0f4e96982f9a2d19b8524944c2a43b0a573abc" if path == metadata.with_name("toolchain.gni") else "e9cf2bbb560d31be8d923732fc98f4d63aecd08f344f45524c89dc3159ea5823" if path == build.src / "build/rust/rust_bindgen_generator.gni" else real_sha(path)), \
-                 patch.object(build, "gate"), patch.object(build, "execute") as execute, \
+                 patch.object(build, "gate"), patch.object(build, "ensure_uia_sdk"), patch.object(build, "execute") as execute, \
                  patch.object(mac_build, "layout", return_value={}), \
                  patch.object(mac_build.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)):
 
@@ -102,6 +102,18 @@ class BuildBoundaryTests(unittest.TestCase):
             self.assertEqual(build.env["TARGET"], "windows")
             self.assertNotIn("TARGET", build.configured_env())
             self.assertEqual(build.configured_env()["DEPOT_TOOLS_WIN_TOOLCHAIN"], "1")
+
+    def test_unknown_sdk_header_is_not_overwritten_or_downloaded(self):
+        with tempfile.TemporaryDirectory() as directory:
+            build = self.make_build(Path(directory))
+            header = build.sdk / "Windows Kits/10/Include/10.0.26100.0/um/UIAutomationCore.h"
+            header.parent.mkdir(parents=True)
+            header.write_bytes(b"unknown operator SDK")
+            with patch.object(build, "download") as download:
+                with self.assertRaisesRegex(RuntimeError, "refusing to replace unknown SDK"):
+                    build.ensure_uia_sdk()
+            download.assert_not_called()
+            self.assertEqual(header.read_bytes(), b"unknown operator SDK")
 
     def test_zero_concurrency_is_rejected_instead_of_silently_defaulting(self):
         with tempfile.TemporaryDirectory() as directory:
