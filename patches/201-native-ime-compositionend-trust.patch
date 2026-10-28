@@ -1,0 +1,67 @@
+Clearcote: retain native IME compositionend trust through the scoped event queue
+
+Why: Chromium 150 creates compositionstart/update via EventTarget::DispatchEvent,
+which marks browser-generated events trusted. Native compositionend is deferred
+through DispatchScopedEvent instead; that path preserves the constructor default
+(false), including ImeCommitText, finish-on-blur and cancellation. Mark trust at
+the browser-owned creation site, without changing script-created DOM events or
+Event.prototype. This changes the isTrusted value visible to websites only for
+native IME compositionend. JS dispatchEvent must continue to expose false.
+
+Pinned source: Chromium 150.0.7871.114 (UPSTREAM_REVISION).
+Regression: InputMethodControllerTest.NativeCompositionEndIsTrusted covers input
+and contenteditable, each with commit, finish and cancellation. Cross-building
+chrome does not execute this C++ test; the Windows artifact has a separate CDP
+runtime probe, including the script-dispatch negative control.
+
+--- a/third_party/blink/renderer/core/editing/ime/input_method_controller.cc
++++ b/third_party/blink/renderer/core/editing/ime/input_method_controller.cc
+@@ -406,6 +406,9 @@
+ 
+   auto* event = MakeGarbageCollected<CompositionEvent>(
+       event_type_names::kCompositionend, frame.DomWindow(), text);
++  // This browser-generated IME event bypasses EventTarget::DispatchEvent when
++  // queued. Preserve the trust assigned to compositionstart/compositionupdate.
++  event->SetTrusted(true);
+   EventDispatcher::DispatchScopedEvent(*target, *event);
+ }
+ 
+--- a/third_party/blink/renderer/core/editing/ime/input_method_controller_test.cc
++++ b/third_party/blink/renderer/core/editing/ime/input_method_controller_test.cc
+@@ -186,6 +186,36 @@
+   EXPECT_EQ("fooX", input->Value());
+ }
+ 
++TEST_F(InputMethodControllerTest, NativeCompositionEndIsTrusted) {
++  GetDocument().GetSettings()->SetScriptEnabled(true);
++  for (const char* html : {"<input id='sample'>",
++                           "<div id='sample' contenteditable></div>"}) {
++    for (int mode = 0; mode < 3; ++mode) {
++      SCOPED_TRACE(html);
++      SCOPED_TRACE(mode);
++      Element* editable = InsertHTMLElement(html, "sample");
++      Element* script = GetDocument().CreateRawElement(html_names::kScriptTag);
++      script->SetInnerHTMLWithoutTrustedTypes(
++          "document.getElementById('sample').addEventListener('compositionend',"
++          "event => document.title = String(event.isTrusted));");
++      GetDocument().body()->AppendChild(script);
++      UpdateAllLifecyclePhasesForTest();
++      editable->Focus();
++      GetDocument().setTitle("no-compositionend");
++      Vector<ImeTextSpan> spans;
++      Controller().SetComposition("ni", spans, 2, 2);
++      if (mode == 0) {
++        Controller().CommitText("ni", spans, 0);
++      } else if (mode == 1) {
++        Controller().FinishComposingText(InputMethodController::kKeepSelection);
++      } else {
++        Controller().SetComposition(g_empty_string, spans, 0, 0);
++      }
++      EXPECT_EQ("true", GetDocument().title());
++    }
++  }
++}
++
+ TEST_F(InputMethodControllerTest, SetCompositionFromExistingText) {
+   Element* div = InsertHTMLElement(
+       "<div id='sample' contenteditable>hello world</div>", "sample");

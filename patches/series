@@ -29,6 +29,7 @@
 170-speech-voices.patch
 180-geolocation.patch
 200-agent-and-humanized-input.patch
+201-native-ime-compositionend-trust.patch
 210-tls-network-persona.patch
 220-no-farble-switch.patch
 900-windows-build-fixes.patch

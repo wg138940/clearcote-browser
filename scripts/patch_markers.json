@@ -448,6 +448,16 @@
         "probe": "With --fingerprint=seed: every name in getSupportedExtensions() returns non-null from getExtension(); a name not advertised returns null (except WEBGL_debug_renderer_info); on webgl2, getParameter(gl.MAX_ELEMENT_INDEX).",
         "expect": "Advertised == gettable; MAX_ELEMENT_INDEX == 4294967294 (persona default) even on a GPU-less host."
       }
+    },
+    "201-native-ime-compositionend-trust.patch": {
+      "surface": "Browser-originated IME compositionend retains trust through the scoped event queue; script dispatch remains untrusted.",
+      "windows_only": false,
+      "markers": [],
+      "runtime": {
+        "surface": "compositionend.isTrusted on input/contenteditable",
+        "probe": "python scripts/ime_runtime_probe.py --binary <fresh-build/chrome.exe> --json <evidence.json>",
+        "expect": "Native start/update/end trusted; mixed Chinese/ASCII/spaces exact; Enter count zero; JS dispatchEvent compositionend stays untrusted. NativeCompositionEndIsTrusted C++ regression is retained but not run by the cross-build."
+      }
     }
   }
 }

@@ -1,0 +1,58 @@
+name: IME trust patch validation
+
+# No browser build, release, package publication or large runner is triggered here.
+# The existing build pipeline retains the full-series L1 gate. Cross-built Windows
+# artifacts must separately pass scripts/ime_runtime_probe.py on Windows before use.
+on:
+  workflow_dispatch: {}
+  push:
+    paths:
+      - "patches/**"
+      - "UPSTREAM_REVISION"
+      - "scripts/check_ime_patch.py"
+      - "scripts/ime_runtime_probe.py"
+      - "scripts/ime_source_pin.json"
+      - "scripts/test_ime_download.py"
+      - "scripts/patch_markers.json"
+      - ".github/workflows/ime-trust.yml"
+  pull_request:
+    paths:
+      - "patches/**"
+      - "UPSTREAM_REVISION"
+      - "scripts/check_ime_patch.py"
+      - "scripts/ime_runtime_probe.py"
+      - "scripts/ime_source_pin.json"
+      - "scripts/test_ime_download.py"
+      - "scripts/patch_markers.json"
+      - ".github/workflows/ime-trust.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Full-series L0 integrity
+        run: python scripts/verify_patches.py
+      - name: Syntax-check build scripts and IME probes
+        shell: bash
+        run: |
+          for script in build.sh scripts/*.sh; do bash -n "$script"; done
+          python -m py_compile scripts/check_ime_patch.py scripts/ime_runtime_probe.py
+          python scripts/ime_runtime_probe.py --help
+          python -m unittest discover -s scripts -p test_ime_download.py -v
+      - name: SHA-pinned source files and exact patch apply/reverse
+        run: python scripts/check_ime_patch.py --json "${{ runner.temp }}/ime-source-check.json"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ime-source-check-${{ github.sha }}
+          path: ${{ runner.temp }}/ime-source-check.json
+          if-no-files-found: warn
+          retention-days: 14

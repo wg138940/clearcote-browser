@@ -1,0 +1,14 @@
+{
+  "chromium_version": "150.0.7871.114",
+  "patch": "201-native-ime-compositionend-trust.patch",
+  "sources": [
+    {
+      "url": "https://chromium.googlesource.com/chromium/src/+/150.0.7871.114/third_party/blink/renderer/core/editing/ime/input_method_controller.cc",
+      "sha256": "e21608cdbdf6194b4c852b98ccbf78ad1ee17a471f8d2471c255ccafcfb478da"
+    },
+    {
+      "url": "https://chromium.googlesource.com/chromium/src/+/150.0.7871.114/third_party/blink/renderer/core/editing/ime/input_method_controller_test.cc",
+      "sha256": "12aa5b0e57142f84f1faf73ac7d999a0529f4dd63f2e96b209a7e9475c5a0bae"
+    }
+  ]
+}
