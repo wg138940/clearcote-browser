@@ -71,6 +71,30 @@ class BuildBoundaryTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "inputs changed"):
                 self.make_build(root)
 
+    def test_requested_concurrency_reaches_gn_ninja_and_lld(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            args = argparse.Namespace(work=root / "work", toolchain=root / "sdk", vcredist=root / "redist",
+                                      stage="all", run=False, jobs=10, link_threads=10)
+            build = mac_build.Build(args)
+            with patch.object(build, "gate"), patch.object(build, "execute") as execute:
+                build.configure()
+                self.assertIn("--threads=10", execute.call_args.args[0])
+                text = (build.src / "out/MacWinIme/args.gn").read_text(encoding="utf-8")
+                self.assertIn("clearcote_host_link_threads=10", text)
+                self.assertIn("concurrent_links=1", text)
+                build.build()
+                self.assertIn("-j10", execute.call_args.args[0])
+
+    def test_zero_concurrency_is_rejected_instead_of_silently_defaulting(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for jobs, links in ((0, 10), (10, 0)):
+                args = argparse.Namespace(work=root / "work", toolchain=root / "sdk", vcredist=root / "redist",
+                                          stage="all", run=False, jobs=jobs, link_threads=links)
+                with self.assertRaisesRegex(ValueError, "between 1 and 256"):
+                    mac_build.Build(args)
+
 
 if __name__ == "__main__":
     unittest.main()

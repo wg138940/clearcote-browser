@@ -1,10 +1,10 @@
-Clearcote optional Mac build-resource guard: single-threaded LLD
+Clearcote optional Mac build-resource guard: explicit LLD thread count
 
-The caller already uses Ninja -j1 and concurrent_links=1. Those bound the
+The caller configures Ninja jobs and concurrent_links=1. Those bound the
 number of linker processes, but LLD otherwise uses all hardware threads.
 This explicit non-official Mac-host Windows opt-in bounds both COFF and host
-Mach-O links to one LLD thread. Defaults remain unchanged. Disable ThinLTO.
-The fixed LLVM23 Mach-O Options.td defines --threads=1; COFF uses /threads:1.
+Mach-O links to the requested LLD thread count. Default zero remains unchanged.
+Disable ThinLTO. Fixed LLVM23 Mach-O accepts --threads=N; COFF uses /threads:N.
 This patch is build-host configuration, separate from mandatory privacy series.
 
 --- a/build/config/compiler/compiler.gni
@@ -26,13 +26,13 @@ This patch is build-host configuration, separate from mandatory privacy series.
  config("linker") {
    ldflags = []
 +  if (clearcote_host_link_threads != 0) {
-+    assert(clearcote_host_link_threads == 1 && host_os == "mac" &&
++    assert(clearcote_host_link_threads >= 1 && clearcote_host_link_threads <= 256 && host_os == "mac" &&
 +               target_os == "win" && !is_official_build && use_lld,
-+           "private Mac cross-build linker bound requires one LLD thread")
++           "private Mac cross-build requires 1..256 LLD threads")
 +    if (is_win) {
-+      ldflags += [ "/threads:1" ]
++      ldflags += [ "/threads:$clearcote_host_link_threads" ]
 +    } else if (is_mac) {
-+      ldflags += [ "-Wl,--threads=1" ]
++      ldflags += [ "-Wl,--threads=$clearcote_host_link_threads" ]
 +    }
 +  }
  

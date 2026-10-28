@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Explicit staged Mac-arm64 -> Windows-x64 build, using an existing source archive.
 
-Default is PLAN ONLY. --run must be launched under the operator's RSS/disk
-process-group guard (taskpolicy -b / nice 19). This script never starts a daemon,
+Default is PLAN ONLY. --run must be launched under the operator's OS-pressure/disk
+process-group guard (taskpolicy utility QoS / nice 19). This script never starts a daemon,
 installs global packages, changes system proxies, or publishes/installs a browser.
 
 Example (create the private job directory first):
@@ -64,6 +64,12 @@ class Build:
         self.sdk = args.toolchain.expanduser().resolve()
         self.redist = args.vcredist.expanduser().resolve()
         self.pins = json.loads((REPO / "tools/mac-clt/build-pins.json").read_text())
+        requested_jobs = getattr(args, "jobs", None)
+        requested_links = getattr(args, "link_threads", None)
+        self.jobs = (os.cpu_count() or 1) if requested_jobs is None else requested_jobs
+        self.link_threads = self.jobs if requested_links is None else requested_links
+        if not 1 <= self.jobs <= 256 or not 1 <= self.link_threads <= 256:
+            raise ValueError("jobs/link threads must be between 1 and 256")
         self.state_path = self.work / "mac-build-state.json"
         self.state = json.loads(self.state_path.read_text()) if self.state_path.exists() else {"stages": {}, "downloads": []}
         # A checkpoint belongs to these exact inputs, never just a stage name.
@@ -127,7 +133,7 @@ class Build:
             raise RuntimeError("dependency revision mismatch")
 
     def download(self, url: str, output):
-        """Finite transport retries, 2MiB/s cap; integrity checks are outside retries."""
+        """Finite transport retries; integrity checks are outside retries."""
         for attempt in range(4):
             try:
                 output.seek(0)
@@ -137,17 +143,12 @@ class Build:
                 with urllib.request.urlopen(url, timeout=60) as response:
                     expected = int(response.headers["Content-Length"]) if response.headers.get("Content-Length") else None
                     while True:
-                        started = time.monotonic()
                         chunk = response.read(128 * 1024)
                         if not chunk:
                             break
                         output.write(chunk)
                         digest.update(chunk)
                         count += len(chunk)
-                        # Rate limiting only; this is not a readiness sleep.
-                        delay = len(chunk) / (2 * 1024 * 1024) - (time.monotonic() - started)
-                        if delay > 0:
-                            time.sleep(delay)
                     if expected is not None and count != expected:
                         raise http.client.IncompleteRead(b"", expected - count)
                 self.state["downloads"].append({"url": url, "sha256": digest.hexdigest(), "size": count})
@@ -258,9 +259,9 @@ class Build:
 
     def bootstrap(self):
         llvm = self.src / "third_party/llvm-build/Release+Asserts/bin"
-        wrapper = self.work / "bin/ninja-single"
+        wrapper = self.work / "bin/ninja-background"
         wrapper.parent.mkdir(parents=True, exist_ok=True)
-        wrapper.write_bytes(b'#!/bin/sh\nexec /opt/homebrew/bin/ninja "$@" -j1\n')
+        wrapper.write_bytes(f'#!/bin/sh\nexec /opt/homebrew/bin/ninja "$@" -j{self.jobs}\n'.encode())
         wrapper.chmod(0o755)
         sdk = metadata()["sdk_path"]
         environment = {**self.env, "PATH": str(llvm) + ":" + self.env["PATH"],
@@ -268,9 +269,9 @@ class Build:
                        "AR": str(llvm / "llvm-ar"), "NINJA": str(wrapper),
                        "CFLAGS": "-isysroot " + shlex.quote(sdk),
                        "CXXFLAGS": "-isysroot " + shlex.quote(sdk),
-                       "LDFLAGS": "-fuse-ld=lld -Wl,--threads=1 -isysroot " + shlex.quote(sdk)}
+                       "LDFLAGS": f"-fuse-ld=lld -Wl,--threads={self.link_threads} -isysroot " + shlex.quote(sdk)}
         self.execute([sys.executable, self.src / "tools/gn/bootstrap/bootstrap.py",
-                      "--skip-generate-buildfiles", "--jobs", "1", "--output", self.work / "bin/gn"], cwd=self.src, env=environment)
+                      "--skip-generate-buildfiles", "--jobs", self.jobs, "--output", self.work / "bin/gn"], cwd=self.src, env=environment)
         self.execute([self.work / "bin/gn", "--version"])
 
     def configured_env(self):
@@ -281,12 +282,12 @@ class Build:
         self.gate()
         out = self.src / "out/MacWinIme"
         out.mkdir(parents=True, exist_ok=True)
-        extra = "\nclearcote_clt_host_sdk=true\nuse_system_xcode=true\nclearcote_host_link_threads=1\nconcurrent_links=1\nuse_thin_lto=false\nuse_siso=false\n"
+        extra = f"\nclearcote_clt_host_sdk=true\nuse_system_xcode=true\nclearcote_host_link_threads={self.link_threads}\nconcurrent_links=1\nuse_thin_lto=false\nuse_siso=false\n"
         (out / "args.gn").write_bytes((REPO / "config/args.gn").read_bytes() + extra.encode())
-        self.execute([self.work / "bin/gn", "gen", out, "--threads=1"], cwd=self.src, env=self.configured_env())
+        self.execute([self.work / "bin/gn", "gen", out, f"--threads={self.jobs}"], cwd=self.src, env=self.configured_env())
 
     def build(self):
-        self.execute(["ninja", "-C", self.src / "out/MacWinIme", "-j1", "chrome"], cwd=self.src, env=self.configured_env())
+        self.execute(["ninja", "-C", self.src / "out/MacWinIme", f"-j{self.jobs}", "chrome"], cwd=self.src, env=self.configured_env())
 
     def package(self):
         self.gate()
@@ -325,6 +326,10 @@ class Build:
                       "binary_sha256": {name: sha(out / name) for name in ("chrome.exe", "chrome.dll")},
                       "runtime_dll_sha256": {name: sha(self.redist / name) for name in runtime},
                       "sdk": metadata(), "downloads": self.state["downloads"],
+                      "scheduling": self.state.get("process_limits"),
+                      "resource_guard": {"memory_pressure_provider": "kern.memorystatus_vm_pressure_level",
+                                         "qos": "utility", "fixed_rss_limit": None,
+                                         "user_activity_detection": False},
                       "cpp_regression": "retained in source; not built/run by chrome cross-build",
                       "runtime_command": "python scripts/ime_runtime_probe.py --binary <extracted/chrome.exe> --json evidence.json"}
         write_json(dist / "provenance.json", provenance)
@@ -343,8 +348,10 @@ class Build:
         limit = 65536 if hard == resource.RLIM_INFINITY else min(hard, 65536)
         resource.setrlimit(resource.RLIMIT_NOFILE, (limit, hard))
         self.state["process_limits"] = {"nofile_soft": limit, "nofile_hard": hard,
-                                        "nice": os.getpriority(os.PRIO_PROCESS, 0), "ninja_jobs": 1,
-                                        "lld_threads": 1, "user_activity_detection": False}
+                                        "nice": os.getpriority(os.PRIO_PROCESS, 0), "ninja_jobs": self.jobs,
+                                        "gn_threads": self.jobs, "lld_threads": self.link_threads,
+                                        "concurrent_links": 1, "qos": "utility",
+                                        "user_activity_detection": False}
         self.work.mkdir(parents=True, exist_ok=True)
         stages = STAGES if self.args.stage == "all" else (self.args.stage,)
         for name in stages:
@@ -382,6 +389,8 @@ def main() -> int:
     parser.add_argument("--toolchain", type=Path, default=root / "wintoolchain")
     parser.add_argument("--vcredist", type=Path, default=root / "work/vcredist")
     parser.add_argument("--stage", choices=(*STAGES, "all"), default="all")
+    parser.add_argument("--jobs", type=int, default=os.cpu_count() or 1, help="Ninja/GN/bootstrap workers; default logical CPUs")
+    parser.add_argument("--link-threads", type=int, help="LLD threads; default same as --jobs; concurrent links remains one")
     parser.add_argument("--run", action="store_true")
     parser.add_argument("--json", type=Path, required=True)
     args = parser.parse_args()
@@ -389,7 +398,8 @@ def main() -> int:
         build = Build(args)
         result = build.run() if args.run else {"status": "plan only; no build action executed", "stages": STAGES,
             "work": str(build.work), "pins": build.pins,
-            "constraints": "external RSS/disk guard, nice19, Ninja-j1, one LLD thread; full-series L1 mandatory; no user-activity detection",
+            "scheduling": {"jobs": build.jobs, "link_threads": build.link_threads, "concurrent_links": 1},
+            "constraints": "external OS-pressure/disk guard, nice19; full-series L1 mandatory; no user-activity detection",
             "acceptance": "GN/build not yet executed; Windows runtime and C++ regression remain unverified"}
         status = 0
     except Exception as error:
