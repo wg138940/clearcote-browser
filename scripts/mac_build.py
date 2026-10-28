@@ -454,7 +454,53 @@ class Build:
             "binary_sha256": expected, "file": architecture, "probe_res_sha256": probe_sha}
         write_json(self.state_path, self.state)
 
+    def ensure_midl_outputs(self):
+        # The lite source archive omits binary .tlb golden MIDL outputs. Restore
+        # those exact checked-in outputs, not replacements generated with a
+        # different SDK. Verify every existing companion before any write.
+        revision = "f405107495a07cb1bfcf687d4af8d91117098db6"
+        expected = "3b47fc01c372c2377aa4c7b9ca421c24928e83bdd17c8708beab61cf5ed5c2cd"
+        url = "https://chromium.googlesource.com/chromium/src/+archive/" + revision + "/third_party/win_build_output/midl.tar.gz"
+        archive = self.work / "download_cache" / ("chromium-midl-" + revision + ".tar.gz")
+        if not archive.exists():
+            with tempfile.TemporaryFile() as incoming:
+                self.download(url, incoming)
+                with archive.open("wb") as output:
+                    shutil.copyfileobj(incoming, output)
+        if sha(archive) != expected:
+            raise RuntimeError("pinned MIDL archive SHA256 mismatch; no integrity retry")
+        directory = (self.src / "third_party/win_build_output/midl").resolve()
+        with tarfile.open(archive) as source:
+            payloads = {}
+            for member in source.getmembers():
+                if member.isdir():
+                    continue
+                destination = (directory / member.name).resolve()
+                if not member.isfile() or not destination.is_relative_to(directory):
+                    raise RuntimeError("unsafe MIDL archive member")
+                payloads[member.name] = (destination, source.extractfile(member).read())
+        tlbs = {name: item for name, item in payloads.items() if name.endswith(".tlb")}
+        if len(payloads) != 292 or len(tlbs) != 48:
+            raise RuntimeError("pinned MIDL tree file count differs")
+        for name, (destination, content) in payloads.items():
+            if name not in tlbs or destination.exists():
+                if not destination.is_file() or destination.read_bytes() != content:
+                    raise RuntimeError("MIDL source companion/typelib differs from pinned Chromium: " + name)
+            if name in tlbs and content[:4] != b"MSFT":
+                raise RuntimeError("pinned MIDL output is not an MSFT typelib")
+        for destination, content in tlbs.values():
+            if not destination.exists():
+                destination.write_bytes(content)
+        record = {"chromium_commit": revision, "url": url, "archive_sha256": expected,
+            "companions_verified": 244, "typelibs_verified": 48,
+            "typelib_sha256": {name: hashlib.sha256(content).hexdigest() for name, (_, content) in tlbs.items()},
+            "scope": "restore only missing genuine checked-in .tlb files; no feature or companion-source changes"}
+        self.state["windows_midl"] = record
+        write_json(self.work / "midl-golden-outputs.json", record)
+        write_json(self.state_path, self.state)
+
     def build(self):
+        self.ensure_midl_outputs()
         self.ensure_esbuild()
         self.ensure_rc()
         self.execute(["ninja", "-C", self.src / "out/MacWinIme", f"-j{self.jobs}", "chrome"], cwd=self.src, env=self.configured_env())
@@ -497,6 +543,7 @@ class Build:
                       "runtime_dll_sha256": {name: sha(self.redist / name) for name in runtime},
                       "sdk": metadata(), "downloads": self.state["downloads"],
                       "sdk_addenda": self.state.get("sdk_addenda", {}),
+                      "windows_midl": self.state.get("windows_midl"),
                       "dynamic_host_tools": {name: self.state.get(name) for name in ("esbuild", "rc")},
                       "scheduling": self.state.get("process_limits"),
                       "resource_guard": {"memory_pressure_provider": "kern.memorystatus_vm_pressure_level",
