@@ -95,6 +95,13 @@ class BuildBoundaryTests(unittest.TestCase):
                     build.build()
                 self.assertIn("-j10", execute.call_args.args[0])
 
+    def test_patch_overlay_selector_does_not_leak_into_bindgen_build_environment(self):
+        with tempfile.TemporaryDirectory() as directory:
+            build = self.make_build(Path(directory))
+            self.assertEqual(build.env["TARGET"], "windows")
+            self.assertNotIn("TARGET", build.configured_env())
+            self.assertEqual(build.configured_env()["DEPOT_TOOLS_WIN_TOOLCHAIN"], "1")
+
     def test_zero_concurrency_is_rejected_instead_of_silently_defaulting(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

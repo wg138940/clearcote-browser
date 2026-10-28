@@ -284,8 +284,12 @@ class Build:
         self.execute([destination, "--version"])
 
     def configured_env(self):
-        return {**self.env, "DEPOT_TOOLS_WIN_TOOLCHAIN": "1", "GYP_MSVS_OVERRIDE_PATH": str(self.sdk),
-                "WINDOWSSDKDIR": str(self.sdk / "Windows Kits/10"), "WDK_DIR": ""}
+        env = {**self.env, "DEPOT_TOOLS_WIN_TOOLCHAIN": "1", "GYP_MSVS_OVERRIDE_PATH": str(self.sdk),
+               "WINDOWSSDKDIR": str(self.sdk / "Windows Kits/10"), "WDK_DIR": ""}
+        # TARGET selects the shell patch overlay, but Rust bindgen deliberately
+        # rejects this Cargo-style variable when compiling host/target bindings.
+        env.pop("TARGET", None)
+        return env
 
     def configure(self):
         self.gate()
