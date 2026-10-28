@@ -71,6 +71,16 @@ class BuildBoundaryTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "inputs changed"):
                 self.make_build(root)
 
+    def test_corrupt_message_golden_archive_cannot_mutate_source(self):
+        with tempfile.TemporaryDirectory() as directory:
+            build = self.make_build(Path(directory))
+            archive = build.work / "download_cache/chromium-mc-f405107495a07cb1bfcf687d4af8d91117098db6.tar.gz"
+            archive.parent.mkdir(parents=True)
+            archive.write_bytes(b"corrupt golden resources")
+            with self.assertRaisesRegex(RuntimeError, "SHA256 mismatch"):
+                build.ensure_mc_outputs()
+            self.assertFalse(build.src.exists())
+
     def test_requested_concurrency_reaches_gn_ninja_and_lld(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -92,7 +102,7 @@ class BuildBoundaryTests(unittest.TestCase):
                 self.assertIn("clearcote_host_link_threads=10", text)
                 self.assertIn("concurrent_links=1", text)
                 self.assertIn("enable_precompiled_headers=false", text)
-                with patch.object(build, "ensure_esbuild"), patch.object(build, "ensure_rc"), patch.object(build, "ensure_midl_outputs"):
+                with patch.object(build, "ensure_esbuild"), patch.object(build, "ensure_rc"), patch.object(build, "ensure_midl_outputs"), patch.object(build, "ensure_mc_outputs"):
                     build.build()
                 self.assertIn("-j10", execute.call_args.args[0])
 
