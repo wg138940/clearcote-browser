@@ -251,7 +251,7 @@ class Build:
             candidate = self.src / "third_party/llvm-build/Release+Asserts/bin" / tool
             if not candidate.is_file():
                 raise RuntimeError(f"native LLVM tool missing: {tool}")
-            description = subprocess.check_output(["file", candidate], text=True)
+            description = subprocess.check_output(["file", "-L", candidate], text=True)
             if "Mach-O" not in description or "arm64" not in description:
                 raise RuntimeError(f"LLVM tool is not native Mac arm64: {description}")
         self.execute([self.src / "third_party/rust-toolchain/bin/rustc", "--version"])
@@ -283,7 +283,7 @@ class Build:
         out.mkdir(parents=True, exist_ok=True)
         extra = "\nclearcote_clt_host_sdk=true\nuse_system_xcode=true\nclearcote_host_link_threads=1\nconcurrent_links=1\nuse_thin_lto=false\nuse_siso=false\n"
         (out / "args.gn").write_bytes((REPO / "config/args.gn").read_bytes() + extra.encode())
-        self.execute([self.work / "bin/gn", "gen", out], cwd=self.src, env=self.configured_env())
+        self.execute([self.work / "bin/gn", "gen", out, "--threads=1"], cwd=self.src, env=self.configured_env())
 
     def build(self):
         self.execute(["ninja", "-C", self.src / "out/MacWinIme", "-j1", "chrome"], cwd=self.src, env=self.configured_env())
